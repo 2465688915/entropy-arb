@@ -343,10 +343,14 @@ class Engine:
             raise
         except Exception:
             log.exception("execute failed")
+            unresolved = True
         finally:
             self._vlock(buy.key).release()
             self._vlock(sell.key).release()
         if unresolved:
+            self.halted = True
+            log.critical("HALTED: order outcome unknown; reconcile positions "
+                         "before any further trading")
             self._reconcile_evt.set()
         else:
             await self._maybe_hedge()
@@ -432,9 +436,11 @@ class Engine:
             buy.send_taker(is_buy=True, qty=plan.qty, limit_px=buy_bound),
             sell.send_taker(is_buy=False, qty=plan.qty, limit_px=sell_bound),
             return_exceptions=True)
+        # An exception can happen after the exchange accepted the order.
+        # Treat its fill as unknown until reconciliation reads both venues.
         binfo, sinfo = (r if isinstance(r, dict) else
-                        {"status": "send-failed", "filled_base": 0.0,
-                         "avg_px": None, "err": repr(r), "unresolved": False}
+                        {"status": "unknown", "filled_base": 0.0,
+                         "avg_px": None, "err": repr(r), "unresolved": True}
                         for r in res)
         for v, info, side in ((buy, binfo, "buy"), (sell, sinfo, "sell")):
             if info.get("err"):
@@ -649,7 +655,9 @@ class Engine:
                 await asyncio.wait_for(self._reconcile_evt.wait(),
                                        timeout=self.cfg.reconcile_sec)
                 self._reconcile_evt.clear()
-                await asyncio.sleep(1.0)
+                # Account REST can lag fills. Wait past the grace window so
+                # this event actually reads the unknown order's positions.
+                await asyncio.sleep(self.RECONCILE_GRACE_SEC + 0.1)
             except asyncio.TimeoutError:
                 pass
             if self.stop.is_set():

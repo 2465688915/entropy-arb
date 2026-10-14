@@ -293,10 +293,11 @@ class LighterVenue:
             if fut is not None:
                 self.orders_feed.unwatch(coi)
             msg = f"{type(e).__name__}: {e}"
-            if getattr(e, "status", None) == 429 or "(429)" in str(e):
+            rate_limited = getattr(e, "status", None) == 429 or "(429)" in str(e)
+            if rate_limited:
                 msg = "RATE_LIMITED: " + msg
             return {"status": "send-failed", "filled_base": 0.0, "avg_px": None,
-                    "err": msg, "unresolved": False}
+                    "err": msg, "unresolved": not rate_limited}
         if err is not None or (getattr(resp, "code", 200) or 200) != 200:
             if fut is not None:
                 self.orders_feed.unwatch(coi)

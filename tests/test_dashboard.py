@@ -50,7 +50,10 @@ class StubVenue:
 
 def render(eng, lang="en") -> str:
     dash = Dashboard(eng, BufferLogHandler(), "logs/engine.log", lang=lang)
-    console = Console(record=True, width=120, force_terminal=True)
+    # Rich may abbreviate table cells at narrower widths, hiding the values
+    # this test is meant to assert without changing the dashboard behavior.
+    console = Console(record=True, width=180, force_terminal=False)
+    dash.console = console
     console.print(dash._safe_render())
     return console.export_text()
 

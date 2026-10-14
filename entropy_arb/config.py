@@ -22,6 +22,7 @@ Threshold model (fixed numbers the user derives from recorded minute data):
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -223,6 +224,8 @@ def _validate(node: Any, schema: Dict[str, Any], path: str = "") -> None:
         elif want is float:
             if not isinstance(val, (int, float)) or isinstance(val, bool):
                 raise ConfigError(f"'{here}' must be a number, got {val!r}")
+            if not math.isfinite(val):
+                raise ConfigError(f"'{here}' must be finite")
         elif want is int:
             if not isinstance(val, int) or isinstance(val, bool):
                 raise ConfigError(f"'{here}' must be an integer, got {val!r}")
@@ -247,7 +250,15 @@ def _env_s(name: str) -> Optional[str]:
 
 def _env_i(name: str) -> Optional[int]:
     v = os.getenv(name)
-    return int(v) if v not in (None, "") else None
+    if v in (None, ""):
+        return None
+    try:
+        result = int(v)
+    except ValueError as e:
+        raise ConfigError(f"{name} must be a non-negative integer") from e
+    if result < 0:
+        raise ConfigError(f"{name} must be a non-negative integer")
+    return result
 
 
 # -------------------------------------------------------------------- loading

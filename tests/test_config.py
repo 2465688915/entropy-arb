@@ -102,6 +102,20 @@ def test_nonpositive_band():
                  "must be > 0")
 
 
+def test_nonfinite_number_rejected():
+    expect_error(MINIMAL.replace("upper_bps: 4.0", "upper_bps: .nan"),
+                 "thresholds.upper_bps' must be finite")
+    expect_error(MINIMAL + "\nsizing:\n  max_order_notional_usd: .inf\n",
+                 "sizing.max_order_notional_usd' must be finite")
+
+
+def test_invalid_lighter_index_is_config_error(monkeypatch):
+    monkeypatch.setenv("LIGHTER_ACCOUNT_INDEX", "invalid")
+    expect_error(MINIMAL, "LIGHTER_ACCOUNT_INDEX must be a non-negative integer")
+    monkeypatch.setenv("LIGHTER_ACCOUNT_INDEX", "-1")
+    expect_error(MINIMAL, "LIGHTER_ACCOUNT_INDEX must be a non-negative integer")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

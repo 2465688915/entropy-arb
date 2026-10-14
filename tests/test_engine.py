@@ -145,6 +145,42 @@ def test_scan_respects_position_caps():
     assert run_scan(eng) is None
 
 
+def test_order_exception_halts_and_requests_reconciliation():
+    eng = make_engine(midline=0.0, upper=1.0, lower=1.0)
+    eng.entropy.set_book(100.14, 100.16)
+    eng.hedge.set_book(99.99, 100.01)
+    buy, sell, plan = run_scan(eng)
+    eng._log_csv = lambda *args: None
+    buy.px_round = sell.px_round = lambda px, round_up: px
+
+    async def unknown_order(**kwargs):
+        raise RuntimeError("connection dropped after send")
+
+    async def filled_order(**kwargs):
+        return {"status": "filled", "filled_base": kwargs["qty"],
+                "avg_px": kwargs["limit_px"], "err": None,
+                "unresolved": False}
+
+    async def unexpected_hedge():
+        raise AssertionError("must reconcile unknown order before hedging")
+
+    buy.send_taker = unknown_order
+    sell.send_taker = filled_order
+    eng._maybe_hedge = unexpected_hedge
+
+    async def go():
+        await eng._vlock(buy.key).acquire()
+        await eng._vlock(sell.key).acquire()
+        await eng._execute_locked(buy, sell, plan)
+
+    asyncio.run(go())
+    assert eng.halted
+    assert eng._reconcile_evt.is_set()
+    assert sell.position == -plan.qty
+    assert not eng._vlock(buy.key).locked()
+    assert not eng._vlock(sell.key).locked()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
